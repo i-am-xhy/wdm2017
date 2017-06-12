@@ -3,7 +3,7 @@ import psycopg2
 
 conn = None
 try:
-    conn = psycopg2.connect("dbname='wdm_pgmovies' user='postgres' host='localhost' port='5433' password='postgres'")
+    conn = psycopg2.connect("dbname='postgres' user='postgres' host='localhost' password='Koekje123'")
 except:
     print("I am unable to connect to the database, exitting")
     exit(-1)
