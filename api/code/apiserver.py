@@ -6,7 +6,6 @@ import psycopg2
 database_options = ['postgres', 'redis', 'couchdb']
 selected_database_option = database_options[0]
 
-
 conn = None
 try:
     dbname = os.getenv('DBNAME', 'postgres')
@@ -33,10 +32,12 @@ def add_api_routes(app):
     app.add_route('/genres', SC4GenreResource())
     app.add_route('/genreStatistics', SC5GenreStatisticsResource())
 
+
 def get_param(json, key):
     if key in json:
         return json[key]
     return None
+
 
 def req_to_json(req):
     return json.loads(req.stream.read().decode('utf-8'))
@@ -89,7 +90,25 @@ class SC2ActorResource:
                 query = basequery + ' WHERE a.fname = \'' + str(fname) + '\''
 
             rows = execute(query)
-            resp.body = json.dumps(rows)
+            movies = [
+                {
+                    'id': row[4],
+                    'title': row[5],
+                    'year': row[6],
+                }
+                for row in rows
+            ]
+            # TODO: try to return unique movies from database in query, to avoid filtering in python
+            unique_movies = list({movie['id']: movie for movie in movies}.values())
+            if len(rows) > 0:
+                result = {
+                    'first_name': rows[0][1],
+                    'last_name': rows[0][2],
+                    'gender': rows[0][3],
+                    'movies': unique_movies
+                }
+
+            resp.body = json.dumps(result)
 
 
 class SC3ShortActorResource:
@@ -117,7 +136,19 @@ class SC3ShortActorResource:
             query += 'group BY a.idactors, a.fname, a.mname, a.lname'
 
             rows = execute(query)
-            resp.body = json.dumps(rows)
+
+            result = [
+                {
+                    'first_name': row[1],
+                    'middle_name': row[2],
+                    'last_name': row[3],
+                    'movies_count': row[4]
+                }
+                for row in rows
+            ]
+
+            resp.body = json.dumps(result)
+
 
 class SC4GenreResource:
     def on_post(self, req, resp):
@@ -135,7 +166,6 @@ class SC4GenreResource:
                     JOIN actors AS a ON a.idactors = ai.idactors
             '''
 
-
             query += 'WHERE g.genre = \'' + genre + '\''
             query += 'AND m.year >= ' + str(fromYear)
             if tillYear:
@@ -143,6 +173,7 @@ class SC4GenreResource:
 
             rows = execute(query)
             resp.body = json.dumps(rows)
+
 
 class SC5GenreStatisticsResource:
     def on_post(self, req, resp):
