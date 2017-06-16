@@ -102,6 +102,8 @@ class SC2ActorResource:
             unique_movies = list({movie['id']: movie for movie in movies}.values())
             if len(rows) > 0:
                 result = {
+                    # TODO: we assume here that the query will result in a unique idactors, which may not always be
+                    # the case for queries by name
                     'first_name': rows[0][1],
                     'last_name': rows[0][2],
                     'gender': rows[0][3],
