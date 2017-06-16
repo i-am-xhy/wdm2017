@@ -1,6 +1,7 @@
 import unittest
 from unittest import TestCase
 import requests
+import json
 
 # TODO this should be imported form settings
 WAITRESS_PORT = 5000
@@ -76,20 +77,21 @@ class shortActorsTest(TestCase):
 
 class MoviesTest(TestCase):
     def test_idmovies(self):
-        print('movie id test')
+        #print('movie id test')
         r = requests.post(base_api_url + '/movies', json = {
             'id': 13
         })
 
         r_as_json = r.json()
-        self.assertEqual('Mmesis', r_as_json[1])
+        print('moviejson' + json.dumps(r_as_json))
+        self.assertEqual('Mmesis', r_as_json['title'])
 
     def test_title(self):
         r = requests.post(base_api_url + '/movies', json = {
             'title': 'Star Wars'
         })
         r_as_json = r.json()
-        self.assertEqual('Star Wars: Battlefront', r_as_json[1])
+        self.assertEqual('Star Wars: Battlefront', r_as_json['title'])
 
 
 class GenreTest(TestCase):

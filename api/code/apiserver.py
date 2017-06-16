@@ -1,8 +1,9 @@
 import json
 import psycopg2
+import redis
 
 database_options = ['postgres', 'redis', 'couchdb']
-selected_database_option = database_options[0]
+selected_database_option = database_options[1]
 
 
 conn = None
@@ -11,6 +12,8 @@ try:
 except:
     print("I am unable to connect to the database, exitting")
     exit(-1)
+
+r = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
 
 
 def execute(command):
@@ -56,7 +59,15 @@ class SC1MovieResource:
             rows = execute(query)
             result = rows[0]
             resp.body = json.dumps(result)
+        elif selected_database_option == 'redis':
+            result = None
+            if id:
+                result = r.hgetall('FMOVIE:' + str(id))
+            elif title:
+                idmovies = r.hget('MOVIESBYTITLE', str(title))
+                result = r.hgetall('FMOVIE:' + str(idmovies))
 
+            resp.body = json.dumps(result)
 
 class SC2ActorResource:
     def on_post(self, req, resp):
@@ -84,6 +95,21 @@ class SC2ActorResource:
 
             rows = execute(query)
             resp.body = json.dumps(rows)
+        elif selected_database_option == 'redis':
+            result = None
+            if id:
+                result = r.hgetall('ACTOR:'+str(id))
+            elif fname and lname:
+                id = r.get('ACTORBYFNAMEANDLNAME:' + str(fname) + str(lname))
+                result = r.hgetall('ACTOR:' + str(id))
+            elif fname:
+                id = r.get('ACTORBYFNAME:'+str(fname))
+                result = r.hgetall('ACTOR:'+str(id))
+            elif lname:
+                id = r.get('ACTORBYLNAME:' + str(lname))
+                result = r.hgetall('ACTOR:' + str(id))
+            resp.body = json.dumps(result)
+
 
 
 class SC3ShortActorResource:
