@@ -114,7 +114,7 @@ class SC3ShortActorResource:
             elif fname:
                 query = basequery + ' WHERE a.fname = \'' + str(fname) + '\''
 
-            query += 'group BY a.idactors'
+            query += 'group BY a.idactors, a.fname, a.mname, a.lname'
 
             rows = execute(query)
             resp.body = json.dumps(rows)
