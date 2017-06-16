@@ -1,4 +1,6 @@
 import json
+import os
+
 import psycopg2
 
 database_options = ['postgres', 'redis', 'couchdb']
@@ -7,7 +9,11 @@ selected_database_option = database_options[0]
 
 conn = None
 try:
-    conn = psycopg2.connect("dbname='postgres' user='postgres' host='localhost' password='Koekje123'")
+    dbname = os.getenv('DBNAME', 'postgres')
+    user = os.getenv('DBUSER', 'postgres')
+    host = os.getenv('DBHOST', 'localhost')
+    password = os.getenv('DBPASSWORD', 'Koekje123')
+    conn = psycopg2.connect(dbname=dbname, user=user, host=host, password=password)
 except:
     print("I am unable to connect to the database, exitting")
     exit(-1)
