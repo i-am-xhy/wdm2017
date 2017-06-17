@@ -14,7 +14,7 @@ try:
     password = os.getenv('DBPASSWORD', 'Koekje123')
     conn = psycopg2.connect(dbname=dbname, user=user, host=host, password=password)
 except:
-    print("I am unable to connect to the database, exitting")
+    print("I am unable to connect to the database, exiting")
     exit(-1)
 
 
