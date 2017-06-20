@@ -27,7 +27,6 @@ def set_data_for_movie(movie):
 
 
 def set_data_for_movies_genre(mg):
-    #r.sadd('MOVIESBYGENRE:'+str(mg[2]), mg[1])
     r.sadd('MOVIESBYGENREBYYEAR:'+str(mg[2]) + ':'+str(mg[3]), mg[1])
     r.sadd('GENRESBYMOVIE:' + str(mg[1]), mg[2])
 
@@ -37,8 +36,6 @@ def set_data_for_acted_in(ai):
     r.sadd('HASACTORS:' + str(ai[3]), ai[1])
 
     r.set('ROLEBYMOVIEBYACTOR:' + str(ai[1]) + ':' + str(ai[3]), ai[4])
-    #r.set('ROLE:' + ai[3], ai[4])
-
 
 
 def set_data_for_genre(g):
@@ -83,13 +80,6 @@ if __name__ == '__main__':
     # pipe = r.pipeline()
     actors = execute('select a.idactors, a.fname, a.lname, a.gender, count(a.idactors) as moviecount from actors as a join acted_in as ai on a.idactors=ai.idactors group by a.idactors' + potentialLimit)
     Parallel(n_jobs=num_cores, verbose=5)(delayed(set_data_for_actor)(actor) for actor in actors)
-    # print(len(actors))
-    # i = 0
-    # for actor in actors:
-    #     if i/len(actors) % 0.01 == 0:
-    #         print('at ' + str(i) + 'out of ' + str(len(actors)))
-    #     set_data_for_actor(actor, pipe)
-    # pipe.execute()
 
     # movies
     movies = execute('SELECT * FROM movies' + potentialLimit)
