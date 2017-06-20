@@ -23,170 +23,126 @@ except:
     exit(-1)
 
 couch_server = Server()
-cdb = couch_server['movies']
-print('couch db loaded')
-
-
-def load_genres():
-    basequery = '''SELECT g.genre, array_agg(m.idmovies)
-                FROM movies AS m
-                JOIN movies_genres AS mg ON m.idmovies=mg.idmovies
-                JOIN genres AS g ON mg.idgenres=g.idgenres
-                GROUP BY g.idgenres
-                '''
-
-    rows = execute(basequery)
-    result = []
-    for row in rows:
-        result.append({
-            'idmovies': rows[1],
-            'genre': rows[0]
-        })
-
-def load_keywords():
-    basequery = '''SELECT m.idmovies, m.title, m.year, a.idactors, a.fname, a.lname, a.gender, ai.character
-                FROM actors AS a
-                JOIN acted_in AS ai ON a.idactors=ai.idactors
-                JOIN movies AS m ON ai.idmovies=m.idmovies
-                '''
-    # JOIN series AS s ON ai.idseries=s.idseries
-    # JOIN movies_keywords AS mk ON m.idmovies=mk.idmovies
-    # JOIN keywords AS k ON mk.idkeywords=k.idkeywords
-    # JOIN movies_genres AS mg ON m.idmovies=mg.idmovies
-    # JOIN genres AS g ON mg.idgenres=g.idgenres
-
-def load_series():
-    basequery = '''SELECT m.idmovies, m.title, m.year, a.idactors, a.fname, a.lname, a.gender, ai.character
-                FROM actors AS a
-                JOIN acted_in AS ai ON a.idactors=ai.idactors
-                JOIN movies AS m ON ai.idmovies=m.idmovies
-                '''
-    # JOIN series AS s ON ai.idseries=s.idseries
-    # JOIN movies_keywords AS mk ON m.idmovies=mk.idmovies
-    # JOIN keywords AS k ON mk.idkeywords=k.idkeywords
-    # JOIN movies_genres AS mg ON m.idmovies=mg.idmovies
-    # JOIN genres AS g ON mg.idgenres=g.idgenres
-
-def load_actors():
-    actor_id_query = '''SELECT a.idactors FROM actors AS a'''
-
-    actor_ids = [t[0] for t in execute(actor_id_query)]
-    actor_ids.sort()
-
-    num_actors = len(actor_ids)
-    stepsize = 100000
-    steps = num_actors / stepsize
-
-    basequery = '''SELECT a.idactors, a.fname, a.lname, a.gender, COUNT(m.idmovies)
-                FROM actors AS a
-                JOIN acted_in AS ai ON a.idactors=ai.idactors
-                JOIN movies AS m ON ai.idmovies=m.idmovies
-                '''
-
-    def process_query(query):
-        rows = execute(query)
-
-        actors = []
-        for row in rows:
-            actor_id = row[0]
-            actors.append({
-                '_id': str(actor_id),
-                # just in case setting _id does not work out for some reason
-                'idactors': actor_id,
-                'fname': row[1],
-                'lname': row[2],
-                'gender': row[3],
-                'acted_in_count': row[4],
-                'type': 'actor'
-            })
-
-        cdb.update(actors)
-
-
-    for i in range(0, steps):
-        query = basequery + ' WHERE a.idactors BETWEEN ' + str(actor_ids[i * stepsize]) + ' AND ' + str(
-            actor_ids[(i + 1) * stepsize - 1]) + '\nGROUP BY a.idactors'
-        process_query(query)
-        print('Completed step {} of {}'.format(i, steps))
-    query = basequery + ' WHERE m.idmovies BETWEEN ' + str(actor_ids[steps * stepsize]) + ' AND ' + str(
-        actor_ids[-1]) + '\nGROUP BY a.idactors'
-    process_query(query)
+couch_dbname = 'movies2'
+cdb = couch_server['movies2']
+print('couch db loaded database: {}'.format(couch_dbname))
 
 
 def load_movies():
-    basequery = '''SELECT m.idmovies, m.title, m.year, array_agg(ai.character), array_agg(k.keyword), array_agg(g.genre), array_agg(s.name)
-                FROM actors AS a
-                JOIN acted_in AS ai ON a.idactors=ai.idactors
-                JOIN movies AS m ON ai.idmovies=m.idmovies
-                JOIN series AS s ON ai.idseries=s.idseries
-                JOIN movies_keywords AS mk ON m.idmovies=mk.idmovies
-                JOIN keywords AS k ON mk.idkeywords=k.idkeywords
-                JOIN movies_genres AS mg ON m.idmovies=mg.idmovies
-                JOIN genres AS g ON mg.idgenres=g.idgenres
-                GROUP BY m.idmovies
-                '''
+    def process_query(query):
+        rows = execute(query)
+
+        movies = []
+        for row in rows:
+            movies.append({
+                'type': 'movie',
+                'movie_id': row[0],
+                'title': row[1],
+                'year': row[2],
+                'keywords': row[3],
+                'genres': row[4],
+                'series': row[5]
+            })
+
+        pprint(movies[0])
+
+        cdb.update(movies)
 
     movie_id_query = '''SELECT m.idmovies FROM movies AS m'''
 
     movie_ids = [t[0] for t in execute(movie_id_query)]
     movie_ids.sort()
-    # one-by-one solution
-    # movies = []
-    # no_movies = len(movie_ids)
-    # for i, movie_id in enumerate(movie_ids):
-    #     if i % 100 == 0:
-    #         print("{} movies processed out of {}".format(i, no_movies))
-    #     query = basequery + ' WHERE m.idmovies = ' + str(movie_id)
-    #     rows = execute(query)
-    #     if len(rows) > 0:
-    #         movie = {'movie_id': movie_id, 'title': rows[0][1], 'year': rows[0][2], 'actors': {}}
-    #         for row in rows:
-    #             actor_id = row[3]
-    #             if actor_id not in movie['actors']:
-    #                 movie['actors'][actor_id] = {'actor_id': row[3], 'first_name': row[4], 'last_name': row[5], 'gender': row[6], 'character': row[7]}
-    #         movie['actors'] = list(movie['actors'].values())
-    #         cdb[str(movie_id)] = movie
+
     num_movies = len(movie_ids)
-    stepsize = 500
+    stepsize = 50000
     steps = num_movies / stepsize
 
+    basequery = '''SELECT m.idmovies, m.title, m.year, array_agg(DISTINCT k.keyword), array_agg(DISTINCT g.genre), array_agg(DISTINCT s.name)
+                FROM movies AS m
+                JOIN series AS s ON m.idmovies=s.idmovies
+                JOIN movies_keywords AS mk ON m.idmovies=mk.idmovies
+                JOIN keywords AS k ON mk.idkeywords=k.idkeywords
+                JOIN movies_genres AS mg ON m.idmovies=mg.idmovies
+                JOIN genres AS g ON mg.idgenres=g.idgenres
+                '''
+
+    print('Loading movies')
+    for i in range(0, steps):
+        query = basequery + ' WHERE m.idmovies BETWEEN ' + str(movie_ids[i * stepsize]) + ' AND ' + str(
+            movie_ids[(i + 1) * stepsize - 1]) + '\nGROUP BY m.idmovies'
+        process_query(query)
+        print('Completed step {} of {}'.format(i, steps))
+    query = basequery + ' WHERE m.idmovies BETWEEN ' + str(movie_ids[steps * stepsize]) + ' AND ' + str(
+        movie_ids[-1]) + '\nGROUP BY m.idmovies'
+    process_query(query)
+    print('Completed step {} of {}'.format(steps, steps))
+
+
+def load_actors():
+    query = '''SELECT a.idactors, a.fname, a.lname, a.gender
+            FROM actors AS a
+            '''
+
+    print('Loading actors')
+    rows = execute(query)
+
+    actors = []
+    for row in rows:
+        actors.append({
+            'type': 'actor',
+            'idactors': row[0],
+            'fname': row[1],
+            'lname': row[2],
+            'gender': row[3]
+        })
+
+    print('Completed loading {} actors'.format(len(actors)))
+
+    cdb.update(actors)
+
+
+def load_acted_in():
     def process_query(query):
         rows = execute(query)
 
-        movies = {}
+        acted_ins = []
         for row in rows:
-            movie_id = row[0]
-            if movie_id not in movies:
-                movies[movie_id] = {'movie_id': movie_id, 'title': row[1], 'year': row[2], 'actors': []}
-            movies[movie_id]['actors'].append(
-                {'actor_id': row[3], 'first_name': row[4], 'last_name': row[5], 'gender': row[6], 'character': row[7]})
-            # long variant:
-            # if movie_id not in movies:
-            #     movies[movie_id] = {'movie_id': movie_id, 'title': row[1], 'year': row[2], 'actors': {}, 'series': [], 'keywords': [], 'genres': []}
-            # movie = movies[movie_id]
-            # actor_id = row[3]
-            # if actor_id not in movie['actors']:
-            #     movie['actors'][actor_id] = {'actor_id': row[3], 'first_name': row[4], 'last_name': row[5], 'gender': row[6], 'character': row[7]}
-            # series = row[8]
-            # if series not in movie['series']:
-            #     movie['series'].append(series)
-            # keyword = row[9]
-            # if keyword not in movie['keywords']:
-            #     movie['keywords'].append(keyword)
-            # genre = row[10]
-            # if genre not in movie['genres']:
-            #     movie['genres'].append(genre)
+            acted_ins.append({
+                'type': 'acted_in',
+                'idacted_in': row[0],
+                'idmovies': row[1],
+                'idactors': row[2],
+                'character': row[3]
+            })
 
-        cdb.update(movies.values())
+        cdb.update(acted_ins)
 
+    idacted_in_query = '''SELECT ai.idacted_in FROM acted_in AS ai'''
+
+    idacted_ins = [t[0] for t in execute(idacted_in_query)]
+    idacted_ins.sort()
+
+    num_movies = len(idacted_ins)
+    stepsize = 500000
+    steps = num_movies / stepsize
+
+    basequery = '''SELECT ai.idacted_in, ai.idmovies, ai.idactors, ai.character
+            FROM acted_in AS ai
+            '''
+
+    print('Loading acted_in relations')
     for i in range(0, steps):
-        query = basequery + ' WHERE m.idmovies BETWEEN ' + str(movie_ids[i * stepsize]) + ' AND ' + str(
-            movie_ids[(i + 1) * stepsize - 1])
+        query = basequery + ' WHERE ai.idacted_in BETWEEN ' + str(idacted_ins[i * stepsize]) + ' AND ' + str(
+            idacted_ins[(i + 1) * stepsize - 1])
         process_query(query)
         print('Completed step {} of {}'.format(i, steps))
-    query = basequery + ' WHERE m.idmovies BETWEEN ' + str(movie_ids[steps * stepsize]) + ' AND ' + str(movie_ids[-1])
+    query = basequery + ' WHERE ai.idacted_in BETWEEN ' + str(idacted_ins[steps * stepsize]) + ' AND ' + str(
+        idacted_ins[-1])
     process_query(query)
+    print('Completed step {} of {}'.format(steps, steps))
 
 
 if __name__ == '__main__':
     load_movies()
+    load_actors()
+    load_acted_in()
