@@ -102,13 +102,15 @@ class MoviesTest(TestCase):
             'id': 14
         })
 
+
         has_object_with_key_and_value(self, r.json(), 'title', 'Supernatural')
         self.assertEqual(len(r.json()[0]['keywords']), 139)
 
-    def test_keywords(self):
+    def test_genres(self):
         r = requests.post(base_api_url + '/movies', json={
             'id': 14
         })
+        
         has_object_with_key_and_value(self, r.json(), 'title', 'Supernatural')
         self.assertEqual(len(r.json()[0]['genres']), 5)
 
@@ -137,7 +139,7 @@ class GenreTest(TestCase):
             'fromYear': 2012
         })
 
-        self.assertEqual(721, len(r.json()))
+        self.assertEqual(128, len(r.json()))
 
         r = requests.post(base_api_url + '/genres', json={
             'genre': 'Horror',
@@ -153,10 +155,9 @@ class GenreStatisticsTest(TestCase):
         r = requests.post(base_api_url + '/genreStatistics', json = {
             'fromYear': 2012
         })
-
         self.assertEqual(33, len(r.json()))
         has_object_with_key_and_value(self, r.json(), 'genre', 'History')
-        has_object_with_key_and_value(self, r.json(), 'movie_count', 614)
+        has_object_with_key_and_value(self, r.json(), 'movie_count', 129)
 
         r = requests.post(base_api_url + '/genreStatistics', json={
             'fromYear': 2012,

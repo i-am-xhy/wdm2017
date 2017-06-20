@@ -62,7 +62,7 @@ def redis_get_full_movie(id):
     idresult = r.hgetall('FMOVIE:' + str(id))
     idresult['idmovies'] = id
     idresult['year'] = int(idresult['year'])
-    idresult['genre_labels'] = list(r.smembers('GENRESBYMOVIE:' + str(id)))
+    idresult['genres'] = list(r.smembers('GENRESBYMOVIE:' + str(id)))
     idresult['keywords'] = list(r.smembers('KEYWORDSBYMOVIE:' + str(id)))
     idactors = r.smembers('ACTEDIN:' + str(id))
     idresult['actors'] = {}
@@ -272,9 +272,12 @@ class SC4GenreResource:
             '''
 
             query += 'WHERE g.genre = \'' + genre + '\''
-            query += 'AND m.year >= ' + str(fromYear)
+
             if tillYear:
+                query += 'AND m.year >= ' + str(fromYear)
                 query += 'AND m.year < ' + str(tillYear)
+            else:
+                query += 'AND m.year = ' + str(fromYear)
 
             rows = execute(query)
             resp.body = json.dumps(rows)
@@ -283,7 +286,7 @@ class SC4GenreResource:
             idgenres = r.get('GENRESBYNAME:'+genre)
 
             if not tillYear:
-                tillYear = datetime.datetime.now().year
+                tillYear = fromYear+1
 
             keys = []
             for idgenre in idgenres:
@@ -314,9 +317,11 @@ class SC5GenreStatisticsResource:
                     LEFT JOIN movies AS m ON m.idmovies = mg.idmovies
             '''
 
-            query += 'AND m.year >= ' + str(fromYear)
             if tillYear:
+                query += 'AND m.year >= ' + str(fromYear)
                 query += 'AND m.year < ' + str(tillYear)
+            else:
+                query += 'AND m.year = ' + str(fromYear)
 
             query += ' GROUP BY g.idgenres'
 
@@ -333,7 +338,7 @@ class SC5GenreStatisticsResource:
             result = []
 
             if not tillYear:
-                tillYear = datetime.datetime.now().year
+                tillYear = fromYear+1
 
             for idgenre in idgenres:
                 genre_name = r.hget('GENRE:' + idgenre, 'genre')
