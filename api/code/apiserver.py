@@ -1,16 +1,22 @@
 import json
+
+import os
+
 import psycopg2
 import psycopg2.extras
 import redis
 import datetime
 
 database_options = ['postgres', 'redis', 'couchdb']
-selected_database_option = database_options[1]
-
+selected_database_option = database_options[0]
 
 conn = None
 try:
-    conn = psycopg2.connect("dbname='postgres' user='postgres' host='localhost' password='Koekje123'")
+    dbname = os.getenv('DBNAME', 'postgres')
+    user = os.getenv('DBUSER', 'postgres')
+    host = os.getenv('DBHOST', 'localhost')
+    password = os.getenv('DBPASSWORD', 'Koekje123')
+    conn = psycopg2.connect(dbname=dbname, user=user, host=host, password=password)
 except:
     print("I am unable to connect to the database, exitting")
     exit(-1)
@@ -32,10 +38,12 @@ def add_api_routes(app):
     app.add_route('/genres', SC4GenreResource())
     app.add_route('/genreStatistics', SC5GenreStatisticsResource())
 
+
 def get_param(json, key):
     if key in json:
         return json[key]
     return None
+
 
 def req_to_json(req):
     return json.loads(req.stream.read().decode('utf-8'))
@@ -52,17 +60,17 @@ class SC1MovieResource:
         id = get_param(req_as_json, 'id')
         title = get_param(req_as_json, 'title')
 
-        #todo should be full movie not just movie
+        # todo should be full movie not just movie
         if selected_database_option == 'postgres':
             result = []
             query = ''
             if id:
-                query = 'SELECT m.idmovies, m.title, m.year FROM movies as m where m.idmovies=' + str(id)
+                query = 'SELECT m.idmovies, m.title, m.year FROM movies AS m WHERE m.idmovies=' + str(id)
             elif title:
-                query = 'SELECT m.idmovies, m.title, m.year FROM movies as m where m.title LIKE \'%' + title + '%\''
+                query = 'SELECT m.idmovies, m.title, m.year FROM movies AS m WHERE m.title LIKE \'%' + title + '%\''
             rows = execute(query)
 
-            #print(json.dumps(rows))
+            # print(json.dumps(rows))
             for row in rows:
                 result.append({
                     'idmovies': row[0],
@@ -84,6 +92,7 @@ class SC1MovieResource:
 
             resp.body = json.dumps(result)
 
+
 class SC2ActorResource:
     def on_post(self, req, resp):
 
@@ -92,12 +101,10 @@ class SC2ActorResource:
         fname = get_param(req_as_json, 'fname')
         lname = get_param(req_as_json, 'lname')
 
-        # todo add movies, which you seem to have forgotten
         if selected_database_option == 'postgres':
-            result = []
             query = None
             basequery = '''SELECT a.idactors, a.fname, a.lname, a.gender, m.idmovies, m.title, m.year 
-                        FROM actors as a 
+                        FROM actors AS a 
                         JOIN acted_in AS ai ON a.idactors=ai.idactors
                         JOIN movies AS m ON ai.idmovies=m.idmovies
                         '''
@@ -111,15 +118,47 @@ class SC2ActorResource:
                 query = basequery + ' WHERE a.fname = \'' + str(fname) + '\''
 
             rows = execute(query)
-            for row in rows:
-                result.append({
-                    'idactors': row[0],
-                    'fname': row[1],
-                    'lname': row[2],
-                    'gender': row[3]
-                })
 
-            resp.body = json.dumps(result)
+            # Construct a dictionary of actors, in order to return correct results per actor, even if the query
+            # results in multiple actors.
+            actors = {}
+            for row in rows:
+                idactors = row[0]
+                idmovies = row[4]
+                if idactors not in actors:
+                    actors[idactors] = {
+                        'idactors': idactors,
+                        'fname': row[1],
+                        'lname': row[2],
+                        'gender': row[3],
+                        # Use a dict of movies, since an actor can have multiple roles in the same movie, which we only
+                        # want to appear as one movie in the result
+                        'movies': {
+                            idmovies: {
+                                'idmovies': idmovies,
+                                'title': row[5],
+                                'year': row[6]
+                            }
+                        }
+                    }
+                else:
+                    movies = actors[idactors]['movies']
+                    if idmovies not in movies:
+                        actors[idactors]['movies'][idmovies] = {
+                            'idmovies': idmovies,
+                            'title': row[5],
+                            'year': row[6]
+                        }
+
+            # Return actors as list, as specified
+            actors = list(actors.values())
+
+            for actor in actors:
+                # Return movies as list ordered by year, as specified
+                actor['movies'] = list(actor['movies'].values())
+                actor['movies'].sort(key=lambda movie: movie['year'])
+
+            resp.body = json.dumps(actors)
         elif selected_database_option == 'redis':
             result = []
             ids = []
@@ -128,19 +167,16 @@ class SC2ActorResource:
             elif fname and lname:
                 ids = r.smembers('ACTORSBYFNAMEANDLNAME:' + str(fname) + str(lname))
             elif fname:
-                ids = r.smembers('ACTORSBYFNAME:'+str(fname))
+                ids = r.smembers('ACTORSBYFNAME:' + str(fname))
             elif lname:
                 ids = r.smembers('ACTORSBYLNAME:' + str(lname))
-
 
             for id in ids:
                 idresult = r.hgetall('ACTOR:' + str(id))
                 idresult['idactors'] = id
                 result.append(idresult)
 
-
             resp.body = json.dumps(result)
-
 
 
 class SC3ShortActorResource:
@@ -154,7 +190,7 @@ class SC3ShortActorResource:
             result = []
             query = None
             basequery = '''SELECT a.idactors, a.fname, a.lname, COUNT(idmovies)
-                          FROM actors as a 
+                          FROM actors AS a 
                           JOIN acted_in AS ai ON a.idactors=ai.idactors
                         '''
             if id:
@@ -166,7 +202,7 @@ class SC3ShortActorResource:
             elif fname:
                 query = basequery + ' WHERE a.fname = \'' + str(fname) + '\''
 
-            query += 'group BY a.idactors'
+            query += 'group BY a.idactors, a.fname, a.mname, a.lname'
 
             rows = execute(query)
 
@@ -198,6 +234,7 @@ class SC3ShortActorResource:
 
             resp.body = json.dumps(result)
 
+
 class SC4GenreResource:
     def on_post(self, req, resp):
         req_as_json = req_to_json(req)
@@ -211,7 +248,6 @@ class SC4GenreResource:
                     JOIN movies_genres AS mg ON g.idgenres=mg.idgenres
                     JOIN movies AS m ON m.idmovies = mg.idmovies
             '''
-
 
             query += 'WHERE g.genre = \'' + genre + '\''
             query += 'AND m.year >= ' + str(fromYear)
@@ -230,15 +266,15 @@ class SC4GenreResource:
 
             for id in ids:
                 for year in range(fromYear, tillYear):
-                    keys.append('MOVIESBYGENREBYYEAR:' + str(id) + ':'+str(year))
+                    keys.append('MOVIESBYGENREBYYEAR:' + str(id) + ':' + str(year))
 
-            #print(json.dumps(keys))
+            # print(json.dumps(keys))
 
             idmovies = r.sunion(keys)
 
             pipe = r.pipeline()
             for idmovie in idmovies:
-                pipe.hgetall('MOVIE:'+str(idmovie))
+                pipe.hgetall('MOVIE:' + str(idmovie))
             result = pipe.execute()
 
             resp.body = json.dumps(result)
@@ -280,7 +316,7 @@ class SC5GenreStatisticsResource:
                 tillYear = datetime.datetime.now().year
 
             for id in ids:
-                genre_name = r.hget('GENRE:'+id, 'genre')
+                genre_name = r.hget('GENRE:' + id, 'genre')
                 idresult = dict({
                     'movie_count': 0,
                     'genre': genre_name
@@ -292,5 +328,3 @@ class SC5GenreStatisticsResource:
                 result.append(idresult)
 
             resp.body = json.dumps(result)
-
-
