@@ -6,9 +6,11 @@ import psycopg2
 import psycopg2.extras
 import redis
 import datetime
+import couchdb
+from couchdb import Server
 
 database_options = ['postgres', 'redis', 'couchdb']
-selected_database_option = database_options[0]
+selected_database_option = database_options[2]
 
 conn = None
 try:
@@ -17,12 +19,19 @@ try:
     host = os.getenv('DBHOST', 'localhost')
     password = os.getenv('DBPASSWORD', 'Koekje123')
     conn = psycopg2.connect(dbname=dbname, user=user, host=host, password=password)
+    print('connected to postgresql database: {}'.format(dbname))
 except:
-    print("I am unable to connect to the database, exitting")
+    print("I am unable to connect to the database, exiting")
     exit(-1)
 
-r = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
+redisdb=0
+r = redis.StrictRedis(host='localhost', port=6379, db=redisdb, decode_responses=True)
+print('connected to redis database: {}'.format(redisdb))
 
+couch_server = Server()
+couch_dbname = 'movies2'
+cdb = couch_server['movies2']
+print('connected to couchdb database: {}'.format(couch_dbname))
 
 def execute(command):
     cur = conn.cursor()
@@ -129,6 +138,23 @@ class SC1MovieResource:
                 result.append(idresult)
 
             resp.body = json.dumps(result)
+        elif selected_database_option == 'couchdb':
+            if id:
+                viewresult = cdb.view('movieServiceDesign/SC1_by_id', key=id)
+                result = None
+                actors = []
+                for row in viewresult:
+                    value = row['value']
+                    if 'idmovies' in value:
+                        if result is None:
+                            result = value
+                        else:
+                            raise ValueError("returned multiple movies for this query by id, should not be possible")
+                    else:
+                        actors.append(value)
+                result['actors'] = actors
+
+                resp.body = json.dumps([result])
 
 
 class SC2ActorResource:
@@ -200,6 +226,23 @@ class SC2ActorResource:
                 result.append(idresult)
 
             resp.body = json.dumps(result)
+        elif selected_database_option == 'couchdb':
+            if id:
+                viewresult = cdb.view('movieServiceDesign/SC2_by_id', key=id)
+                actor = None
+                for row in viewresult:
+                    if 'idactors' in row['value']:
+                        if actor is None:
+                            actor = row['value']
+                        else:
+                            raise ValueError("returned multiple actors for this query by id, should not be possible")
+                if actor is not None and 'acted_in' in actor:
+                    movieids = [acted_in['movieids'] for acted_in in actor['acted_in']]
+                    movies_viewresult = cdb.view('movieServiceDesign/SC1_by_id', keys=movieids)
+                    actor['acted_in'] = []
+                    for row in movies_viewresult:
+                        actor['acted_in'].append(row['value'])
+                resp.body = json.dumps([actor])
 
 
 class SC3ShortActorResource:
@@ -255,6 +298,13 @@ class SC3ShortActorResource:
                 result.append(idresult)
 
             resp.body = json.dumps(result)
+        elif selected_database_option == 'couchdb':
+            if id:
+                viewresult = cdb.view('movieServiceDesign/SC3_by_id', key=id)
+                results = []
+                for result in viewresult:
+                    results.append(result['value'])
+                resp.body = json.dumps(results)
 
 
 class SC4GenreResource:
@@ -292,7 +342,6 @@ class SC4GenreResource:
             for idgenre in idgenres:
                 for year in range(fromYear, tillYear):
                     keys.append('MOVIESBYGENREBYYEAR:' + str(idgenre) + ':' + str(year))
-
             idmovies = r.sunion(keys)
 
             pipe = r.pipeline()
@@ -301,6 +350,15 @@ class SC4GenreResource:
             result = pipe.execute()
 
             resp.body = json.dumps(result)
+        elif selected_database_option == 'couchdb':
+            if not tillYear:
+                viewresult = cdb.view('movieServiceDesign/SC4_by_id', key=[genre, fromYear])
+            else:
+                viewresult = cdb.view('movieServiceDesign/SC4_by_id', startkey=[genre, fromYear], endkey=[genre,tillYear])
+            results = []
+            for result in viewresult:
+                results.append(result['value'])
+            resp.body = json.dumps(results)
 
 
 class SC5GenreStatisticsResource:
@@ -353,3 +411,12 @@ class SC5GenreStatisticsResource:
                 result.append(idresult)
 
             resp.body = json.dumps(result)
+        elif selected_database_option == 'couchdb':
+            if not tillYear:
+                viewresult = cdb.view('movieServiceDesign/SC5_by_id', key=[fromYear, {}])
+            else:
+                viewresult = cdb.view('movieServiceDesign/SC5_by_id', startkey=[fromYear, {}], endkey=[tillYear, "{}"])
+            results = []
+            for result in viewresult:
+                results.append(result['value'])
+            resp.body = json.dumps(results)
