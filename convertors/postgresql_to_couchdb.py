@@ -44,8 +44,6 @@ def load_movies():
                 'series': row[5]
             })
 
-        pprint(movies[0])
-
         cdb.update(movies)
 
     movie_id_query = '''SELECT m.idmovies FROM movies AS m'''
@@ -69,75 +67,61 @@ def load_movies():
     print('Loading movies')
     for i in range(0, steps):
         query = basequery + ' WHERE m.idmovies BETWEEN ' + str(movie_ids[i * stepsize]) + ' AND ' + str(
-            movie_ids[(i + 1) * stepsize - 1]) + '\nGROUP BY m.idmovies'
+            movie_ids[(i + 1) * stepsize - 1]) + '\n GROUP BY m.idmovies'
         process_query(query)
         print('Completed step {} of {}'.format(i, steps))
     query = basequery + ' WHERE m.idmovies BETWEEN ' + str(movie_ids[steps * stepsize]) + ' AND ' + str(
-        movie_ids[-1]) + '\nGROUP BY m.idmovies'
+        movie_ids[-1]) + '\n GROUP BY m.idmovies'
     process_query(query)
     print('Completed step {} of {}'.format(steps, steps))
 
 
 def load_actors():
-    query = '''SELECT a.idactors, a.fname, a.lname, a.gender
-            FROM actors AS a
-            '''
-
-    print('Loading actors')
-    rows = execute(query)
-
-    actors = []
-    for row in rows:
-        actors.append({
-            'type': 'actor',
-            'idactors': row[0],
-            'fname': row[1],
-            'lname': row[2],
-            'gender': row[3]
-        })
-
-    print('Completed loading {} actors'.format(len(actors)))
-
-    cdb.update(actors)
-
-
-def load_acted_in():
     def process_query(query):
         rows = execute(query)
 
-        acted_ins = []
+        actors = []
         for row in rows:
-            acted_ins.append({
-                'type': 'acted_in',
-                'idacted_in': row[0],
-                'idmovies': row[1],
-                'idactors': row[2],
-                'character': row[3]
-            })
+            actor = {
+                'type': 'actor',
+                'idactors': row[0],
+                'fname': row[1],
+                'lname': row[2],
+                'gender': row[3],
+                'acted_in': []
+            }
+            for i, idmovies in enumerate(row[4]):
+                actor['acted_in'].append({
+                    'idmovies': idmovies,
+                    'character': row[5][i]
+                })
 
-        cdb.update(acted_ins)
+            actors.append(actor)
 
-    idacted_in_query = '''SELECT ai.idacted_in FROM acted_in AS ai'''
+        cdb.update(actors)
 
-    idacted_ins = [t[0] for t in execute(idacted_in_query)]
-    idacted_ins.sort()
+    idactors_query = '''SELECT a.idactors FROM actors AS a'''
 
-    num_movies = len(idacted_ins)
-    stepsize = 500000
-    steps = num_movies / stepsize
+    idactors = [t[0] for t in execute(idactors_query)]
+    idactors.sort()
 
-    basequery = '''SELECT ai.idacted_in, ai.idmovies, ai.idactors, ai.character
-            FROM acted_in AS ai
+    num_actors = len(idactors)
+    stepsize = 50000
+    steps = num_actors / stepsize
+
+    basequery = '''SELECT a.idactors, a.fname, a.lname, a.gender, array_agg(ai.idmovies), array_agg(ai.character)
+            FROM actors AS a
+            JOIN acted_in AS ai ON a.idactors=ai.idactors
             '''
 
-    print('Loading acted_in relations')
+    print('Loading actors')
     for i in range(0, steps):
-        query = basequery + ' WHERE ai.idacted_in BETWEEN ' + str(idacted_ins[i * stepsize]) + ' AND ' + str(
-            idacted_ins[(i + 1) * stepsize - 1])
+        query = basequery + ' WHERE a.idactors BETWEEN ' + str(idactors[i * stepsize]) + ' AND ' + str(
+            idactors[(i + 1) * stepsize - 1]) + '\n GROUP BY a.idactors'
         process_query(query)
         print('Completed step {} of {}'.format(i, steps))
-    query = basequery + ' WHERE ai.idacted_in BETWEEN ' + str(idacted_ins[steps * stepsize]) + ' AND ' + str(
-        idacted_ins[-1])
+    query = basequery + ' WHERE a.idactors BETWEEN ' + str(idactors[steps * stepsize]) + ' AND ' + str(
+        idactors[-1]) + '\n GROUP BY a.idactors'
     process_query(query)
     print('Completed step {} of {}'.format(steps, steps))
 
@@ -145,4 +129,3 @@ def load_acted_in():
 if __name__ == '__main__':
     load_movies()
     load_actors()
-    load_acted_in()
