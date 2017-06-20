@@ -16,17 +16,14 @@ def has_object_with_key_and_value(self, array, key, value, msg = 'Did not find a
 class ActorTest(TestCase):
     def test_checkDataExists(self):
         result = r.hgetall('ACTOR:1')
-        #print(result)
         self.assertEqual('\"\"Steff\"\"', result['lname'])
         self.assertEqual('Stefanie Oxmann Mcgaha', result['fname'])
         self.assertEqual('None', result['gender'])
     def test_actor_by_fname(self):
         ids = r.smembers('ACTORSBYFNAME:Remi')
-        print('ids: '+str(ids))
         self.assertIn('748468', ids)
 
         result = r.hgetall('ACTOR:748468')
-        print(result)
 
         self.assertEqual('Mayama', result['lname'])
         self.assertEqual('Remi', result['fname'])
@@ -41,20 +38,14 @@ class MovieTest(TestCase):
 
     def test_movie_by_title(self):
         ids = r.smembers('MOVIESBYTITLE:Rebellious Flower')
-        #print(r.hgetall('MOVIEBYTITLE'))
-        #print('id for title '+ str(ids))
         result = r.hgetall('MOVIE:'+str(ids.pop()))
-        #print('movie by title result')
-        #print(result)
         self.assertEqual('Rebellious Flower', result['title'])
         self.assertEqual('2016', result['year'])
 
     def test_full_movie_data_exists(self):
         result = r.hgetall('FMOVIE:1')
-        #print(result)
         self.assertEqual('Night of the Demons', result['title'])
         self.assertEqual('2009', result['year'])
-        #self.assertEqual('still need to add other values for fmovie', None)
 
 
 
