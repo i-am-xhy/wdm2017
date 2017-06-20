@@ -97,6 +97,21 @@ class MoviesTest(TestCase):
 
         has_object_with_key_and_value(self, r.json(), 'title', 'Mmesis')
 
+    def test_keywords(self):
+        r = requests.post(base_api_url + '/movies', json={
+            'id': 14
+        })
+
+        has_object_with_key_and_value(self, r.json(), 'title', 'Supernatural')
+        self.assertEqual(len(r.json()[0]['keywords']), 139)
+
+    def test_keywords(self):
+        r = requests.post(base_api_url + '/movies', json={
+            'id': 14
+        })
+        has_object_with_key_and_value(self, r.json(), 'title', 'Supernatural')
+        self.assertEqual(len(r.json()[0]['genres']), 5)
+
     def test_title(self):
         r = requests.post(base_api_url + '/movies', json = {
             'title': 'Night of the Demons'
@@ -104,6 +119,8 @@ class MoviesTest(TestCase):
 
         has_object_with_key_and_value(self, r.json(), 'title', 'Night of the Demons')
         has_object_with_key_and_value(self, r.json(), 'year', 1988)
+
+
 
     def test_partial_title(self):
         r = requests.post(base_api_url + '/movies', json = {

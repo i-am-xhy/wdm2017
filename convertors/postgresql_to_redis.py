@@ -7,15 +7,15 @@ import multiprocessing
 r = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
 
 
-def set_data_for_actor(actor):
-    r.hset('ACTOR:' + str(actor[0]), 'fname', actor[1])
-    r.hset('ACTOR:' + str(actor[0]), 'lname', actor[2])
-    r.hset('ACTOR:' + str(actor[0]), 'gender', actor[3])
-    r.hset('ACTEDINCOUNT', actor[0], actor[4])
+def set_data_for_actor(actor, connection=r):
+    connection.hset('ACTOR:' + str(actor[0]), 'fname', actor[1])
+    connection.hset('ACTOR:' + str(actor[0]), 'lname', actor[2])
+    connection.hset('ACTOR:' + str(actor[0]), 'gender', actor[3])
+    connection.hset('ACTEDINCOUNT', actor[0], actor[4])
 
-    r.sadd('ACTORSBYFNAMEANDLNAME:' + str(actor[1]) + str(actor[2]), actor[0])
-    r.sadd('ACTORSBYFNAME:' + str(actor[1]), actor[0])
-    r.sadd('ACTORSBYLNAME:' + str(actor[2]), actor[0])
+    connection.sadd('ACTORSBYFNAMEANDLNAME:' + str(actor[1]) + str(actor[2]), actor[0])
+    connection.sadd('ACTORSBYFNAME:' + str(actor[1]), actor[0])
+    connection.sadd('ACTORSBYLNAME:' + str(actor[2]), actor[0])
 
 
 def set_data_for_movie(movie):
@@ -57,7 +57,7 @@ def set_data_for_movies_keywords(mk):
 if __name__ == '__main__':
     # for quick adaptability of the script add a limit to see if it works at all.
     # for a correct database transfer make this an empty string
-    potentialLimit = ' LIMIT 1000000'
+    potentialLimit = ''#'' LIMIT 1000000'
 
     # todo refactor with apiserver.py to have common source
     conn = None
@@ -80,8 +80,16 @@ if __name__ == '__main__':
     # todo we probably don't want this to happen always
     r.flushdb()
     # actors
+    # pipe = r.pipeline()
     actors = execute('select a.idactors, a.fname, a.lname, a.gender, count(a.idactors) as moviecount from actors as a join acted_in as ai on a.idactors=ai.idactors group by a.idactors' + potentialLimit)
     Parallel(n_jobs=num_cores, verbose=5)(delayed(set_data_for_actor)(actor) for actor in actors)
+    # print(len(actors))
+    # i = 0
+    # for actor in actors:
+    #     if i/len(actors) % 0.01 == 0:
+    #         print('at ' + str(i) + 'out of ' + str(len(actors)))
+    #     set_data_for_actor(actor, pipe)
+    # pipe.execute()
 
     # movies
     movies = execute('SELECT * FROM movies' + potentialLimit)
