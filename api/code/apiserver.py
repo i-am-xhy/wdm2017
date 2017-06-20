@@ -6,9 +6,11 @@ import psycopg2
 import psycopg2.extras
 import redis
 import datetime
+import couchdb
+from couchdb import Server
 
 database_options = ['postgres', 'redis', 'couchdb']
-selected_database_option = database_options[0]
+selected_database_option = database_options[2]
 
 conn = None
 try:
@@ -17,12 +19,19 @@ try:
     host = os.getenv('DBHOST', 'localhost')
     password = os.getenv('DBPASSWORD', 'Koekje123')
     conn = psycopg2.connect(dbname=dbname, user=user, host=host, password=password)
+    print('connected to postgresql database: {}'.format(dbname))
 except:
     print("I am unable to connect to the database, exiting")
     exit(-1)
 
-r = redis.StrictRedis(host='localhost', port=6379, db=0, decode_responses=True)
+redisdb=0
+r = redis.StrictRedis(host='localhost', port=6379, db=redisdb, decode_responses=True)
+print('connected to redis database: {}'.format(redisdb))
 
+couch_server = Server()
+couch_dbname = 'movies2'
+cdb = couch_server['movies2']
+print('connected to couchdb database: {}'.format(couch_dbname))
 
 def execute(command):
     cur = conn.cursor()
@@ -91,6 +100,10 @@ class SC1MovieResource:
                 result.append(idresult)
 
             resp.body = json.dumps(result)
+        elif selected_database_option == 'couchdb':
+            if id:
+                result = cdb.view('movieServiceDesign/SC1_by_id', key=id)
+                resp.body = json.dumps(result)
 
 
 class SC2ActorResource:
@@ -177,6 +190,10 @@ class SC2ActorResource:
                 result.append(idresult)
 
             resp.body = json.dumps(result)
+        elif selected_database_option == 'couchdb':
+            if id:
+                result = cdb.view('movieServiceDesign/SC2_by_id', key=id)
+                resp.body = json.dumps(result)
 
 
 class SC3ShortActorResource:
@@ -233,6 +250,10 @@ class SC3ShortActorResource:
                 result.append(idresult)
 
             resp.body = json.dumps(result)
+        elif selected_database_option == 'couchdb':
+            if id:
+                result = cdb.view('movieServiceDesign/SC3_by_id', key=id)
+                resp.body = json.dumps(result)
 
 
 class SC4GenreResource:
@@ -277,6 +298,12 @@ class SC4GenreResource:
                 pipe.hgetall('MOVIE:' + str(idmovie))
             result = pipe.execute()
 
+            resp.body = json.dumps(result)
+        elif selected_database_option == 'couchdb':
+            if not tillYear:
+                result = cdb.view('SC4_by_id', key=[genre, fromYear])
+            else:
+                result = cdb.view('SC4_by_id', startkey=[genre, fromYear], endkey=[genre,tillYear])
             resp.body = json.dumps(result)
 
 
@@ -327,4 +354,10 @@ class SC5GenreStatisticsResource:
                     idresult['movie_count'] += r.scard('MOVIESBYGENREBYYEAR:' + str(id) + ':' + str(year))
                 result.append(idresult)
 
+            resp.body = json.dumps(result)
+        elif selected_database_option == 'couchdb':
+            if not tillYear:
+                result = cdb.view('SC5_by_id', key=[fromYear, {}])
+            else:
+                result = cdb.view('SC5_by_id', startkey=[fromYear, {}], endkey=[tillYear, {}])
             resp.body = json.dumps(result)
