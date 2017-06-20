@@ -9,8 +9,6 @@ from couchdb import Server, Document
 
 from api.code.apiserver import execute
 
-psycopg2.extensions.register_type(psycopg2.extensions.UNICODE)
-
 conn = None
 try:
     dbname = os.getenv('DBNAME', 'postgres')
@@ -18,6 +16,7 @@ try:
     host = os.getenv('DBHOST', 'localhost')
     password = os.getenv('DBPASSWORD', 'Koekje123')
     conn = psycopg2.connect(dbname=dbname, user=user, host=host, password=password)
+    psycopg2.extensions.register_type(psycopg2.extensions.UNICODE, conn)
 except:
     print("I am unable to connect to the database, exitting")
     exit(-1)
@@ -52,16 +51,19 @@ def load_movies():
     movie_ids.sort()
 
     num_movies = len(movie_ids)
-    stepsize = 50000
-    steps = num_movies / stepsize
+    stepsize = 20000
+    steps = int(num_movies / stepsize)
 
+    # We denormalize all keywords, series and genres by inlining them into the movie object. This allows for efficient
+    # queries, but not for efficient updates. Since changes to series, keywords or genres are very rare, this is
+    # appropriate for our use case.
     basequery = '''SELECT m.idmovies, m.title, m.year, array_agg(DISTINCT k.keyword), array_agg(DISTINCT g.genre), array_agg(DISTINCT s.name)
                 FROM movies AS m
-                JOIN series AS s ON m.idmovies=s.idmovies
-                JOIN movies_keywords AS mk ON m.idmovies=mk.idmovies
-                JOIN keywords AS k ON mk.idkeywords=k.idkeywords
-                JOIN movies_genres AS mg ON m.idmovies=mg.idmovies
-                JOIN genres AS g ON mg.idgenres=g.idgenres
+                LEFT JOIN series AS s ON m.idmovies=s.idmovies
+                LEFT JOIN movies_keywords AS mk ON m.idmovies=mk.idmovies
+                LEFT JOIN keywords AS k ON mk.idkeywords=k.idkeywords
+                LEFT JOIN movies_genres AS mg ON m.idmovies=mg.idmovies
+                LEFT JOIN genres AS g ON mg.idgenres=g.idgenres
                 '''
 
     print('Loading movies')
@@ -90,6 +92,14 @@ def load_actors():
                 'gender': row[3],
                 'acted_in': []
             }
+            # We use the "List of Keys" approach for Many-to-Many relationships to describe the acted_in relationship
+            # between actors and movies, as outlined here:
+            # https://wiki.apache.org/couchdb/EntityRelationship#Many_to_Many:_List_of_Keys.
+            #
+            # This approach is suitable for our application, since it allows for efficient querying without duplicating
+            # any data. It also allows for efficient updates, although it is not optimized for concurrent updates
+            # to to same actor, since this can cause conflicts. This is also appropriate, since actors will rarely
+            # need to be updated by multiple people at the same time.
             for i, idmovies in enumerate(row[4]):
                 actor['acted_in'].append({
                     'idmovies': idmovies,
@@ -107,7 +117,7 @@ def load_actors():
 
     num_actors = len(idactors)
     stepsize = 50000
-    steps = num_actors / stepsize
+    steps = int(num_actors / stepsize)
 
     basequery = '''SELECT a.idactors, a.fname, a.lname, a.gender, array_agg(ai.idmovies), array_agg(ai.character)
             FROM actors AS a
