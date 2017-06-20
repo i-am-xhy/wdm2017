@@ -8,7 +8,7 @@ import redis
 import datetime
 
 database_options = ['postgres', 'redis', 'couchdb']
-selected_database_option = database_options[0]
+selected_database_option = database_options[1]
 
 conn = None
 try:
@@ -37,6 +37,25 @@ def add_api_routes(app):
     app.add_route('/shortActors', SC3ShortActorResource())
     app.add_route('/genres', SC4GenreResource())
     app.add_route('/genreStatistics', SC5GenreStatisticsResource())
+
+
+def redis_get_full_movie(id):
+    idresult = r.hgetall('FMOVIE:' + str(id))
+    idresult['idmovies'] = id
+    idresult['year'] = int(idresult['year'])
+    idresult['genre_labels'] = list(r.smembers('GENRESBYMOVIE:' + str(id)))
+    idresult['keywords'] = list(r.smembers('KEYWORDSBYMOVIE:' + str(id)))
+    idactors = r.smembers('ACTEDIN:' + str(id))
+    idresult['actors'] = {}
+    for idactor in idactors:
+        idresult['actors'][idactor] = r.get('ROLEBYMOVIEBYACTOR:' + str(id) + ':' + str(idactor))
+    return idresult
+
+
+def redis_get_actor(id):
+    idresult = r.hgetall('ACTOR:' + str(id))
+    idresult['idactors'] = int(id)
+    return idresult
 
 
 def get_param(json, key):
@@ -70,7 +89,6 @@ class SC1MovieResource:
                 query = 'SELECT m.idmovies, m.title, m.year FROM movies AS m WHERE m.title LIKE \'%' + title + '%\''
             rows = execute(query)
 
-            # print(json.dumps(rows))
             for row in rows:
                 result.append({
                     'idmovies': row[0],
@@ -86,8 +104,8 @@ class SC1MovieResource:
                 ids = r.smembers('MOVIESBYTITLE:' + str(title))
 
             for id in ids:
-                idresult = r.hgetall('FMOVIE:' + str(id))
-                idresult['idmovies'] = id
+                idresult = redis_get_full_movie(id)
+
                 result.append(idresult)
 
             resp.body = json.dumps(result)
@@ -172,8 +190,12 @@ class SC2ActorResource:
                 ids = r.smembers('ACTORSBYLNAME:' + str(lname))
 
             for id in ids:
-                idresult = r.hgetall('ACTOR:' + str(id))
-                idresult['idactors'] = id
+                idresult = redis_get_actor(id)
+
+                idmovies = r.smembers('HASACTORS:' + str(id))
+                idresult['movies'] = {}
+                for idmovie in idmovies:
+                    idresult['movies'][idmovie] = r.hgetall('MOVIE:' + str(idmovie))
                 result.append(idresult)
 
             resp.body = json.dumps(result)
@@ -227,9 +249,8 @@ class SC3ShortActorResource:
                 ids = r.smembers('ACTORSBYLNAME:' + str(lname))
 
             for idactor in ids:
-                idresult = r.hgetall('ACTOR:' + str(idactor))
-                idresult['acted_in_count'] = r.hget('ACTEDINCOUNT', idactor)
-                idresult['idactors'] = idactor
+                idresult = redis_get_actor(idactor)
+                idresult['acted_in_count'] = int(r.hget('ACTEDINCOUNT', idactor))
                 result.append(idresult)
 
             resp.body = json.dumps(result)
@@ -258,17 +279,15 @@ class SC4GenreResource:
             resp.body = json.dumps(rows)
         if selected_database_option == 'redis':
             result = {}
-            ids = r.smembers('GENRES')
-            keys = []
+            idgenres = r.get('GENRESBYNAME:'+genre)
 
             if not tillYear:
                 tillYear = datetime.datetime.now().year
 
-            for id in ids:
+            keys = []
+            for idgenre in idgenres:
                 for year in range(fromYear, tillYear):
-                    keys.append('MOVIESBYGENREBYYEAR:' + str(id) + ':' + str(year))
-
-            # print(json.dumps(keys))
+                    keys.append('MOVIESBYGENREBYYEAR:' + str(idgenre) + ':' + str(year))
 
             idmovies = r.sunion(keys)
 
@@ -309,22 +328,22 @@ class SC5GenreStatisticsResource:
 
             resp.body = json.dumps(result)
         if selected_database_option == 'redis':
-            ids = r.smembers('GENRES')
+            idgenres = r.smembers('GENRES')
             result = []
 
             if not tillYear:
                 tillYear = datetime.datetime.now().year
 
-            for id in ids:
-                genre_name = r.hget('GENRE:' + id, 'genre')
+            for idgenre in idgenres:
+                genre_name = r.hget('GENRE:' + idgenre, 'genre')
+
                 idresult = dict({
                     'movie_count': 0,
                     'genre': genre_name
                 })
 
-                # todo consider replacing with a sunion construct
                 for year in range(fromYear, tillYear):
-                    idresult['movie_count'] += r.scard('MOVIESBYGENREBYYEAR:' + str(id) + ':' + str(year))
+                    idresult['movie_count'] += r.scard('MOVIESBYGENREBYYEAR:' + str(idgenre) + ':' + str(year))
                 result.append(idresult)
 
             resp.body = json.dumps(result)
