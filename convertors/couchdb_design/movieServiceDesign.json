@@ -1,22 +1,22 @@
 {
   "_id": "_design/movieServiceDesign",
-  "_rev": "5-ce0b810dbde33516d3bccf2dfda8e1a4",
+  "_rev": "13-bd10b0922baac9d86664c769d47633d0",
   "views": {
     "SC1_by_id": {
-      "map": "function (doc) {\n  if (doc.type == \"movie\") {\n      emit(doc.movie_id, {idmovies: doc.movie_id, title: doc.title, year: doc.year, keywords: doc.keywords, genres: doc.genres, series: doc.series});\n  } else if (doc.type == \"actor\") {\n    for (var ai in doc.acted_in) {\n      emit(ai.idmovies, {idactors: doc.idactors, fname: doc.fname, lname: doc.lname, gender: doc.gender, character: ai.character});\n    }\n  }\n}"
+      "map": "function (doc) {\n  if (doc.type == \"movie\") {\n      emit(doc.movie_id, {idmovies: doc.movie_id, title: doc.title, year: doc.year, keywords: doc.keywords, genres: doc.genres, series: doc.series});\n  } else if (doc.type == \"actor\") {\n    doc.acted_in.forEach(function(element) {\n      emit(element.idmovies, {idactors: doc.idactors, fname: doc.fname, lname: doc.lname, gender: doc.gender, character: element.character});\n    })\n  }\n}"
     },
     "SC2_by_id": {
-      "map": "function (doc) {\n    if (doc.type == \"actor\") {\n        emit(doc.idactors, {idactors: doc.idactors, fname: doc.fname, lname: doc.lname, gender: doc.gender});\n        for (var ai in doc.acted_in) {\n            emit(doc.idactors, ai);\n        }\n    }\n}"
+      "map": "function (doc) {\n    if (doc.type == \"actor\") {\n        emit(doc.idactors, {idactors: doc.idactors, fname: doc.fname, lname: doc.lname, gender: doc.gender});\n        doc.acted_in.forEach(function(element) {\n            emit(doc.idactors, element);\n        })\n    }\n}"
     },
     "SC3_by_id": {
-      "map": "function (doc) {\n    if (doc.type == \"actor\") {\n        emit(doc.idactors, {idactors: doc.idactors, fname: doc.fname, lname: doc.lname, acted_in_count: Object.keys(doc.acted_in).length()});\n    }\n}"
+      "map": "function (doc) {\n    if (doc.type == \"actor\") {\n        emit(doc.idactors, {idactors: doc.idactors, fname: doc.fname, lname: doc.lname, acted_in_count: doc.acted_in.length});\n    }\n}"
     },
     "SC4_by_id": {
-      "map": "function (doc) {\n    if(doc.type == \"movie\"){\n        emit([doc.genre, doc.year], {idmovies: doc.movie_id, title: doc.title, year: doc.year});\n    }\n}"
+      "map": "function (doc) {\n    if(doc.type == \"movie\"){\n        doc.genres.forEach(function(genre) {\n            if (genre && doc.year) {\n                emit([genre, doc.year], {idmovies: doc.movie_id, title: doc.title, year: doc.year});\n            }\n        })\n    }\n}"
     },
     "SC5_by_id": {
       "reduce": "_count",
-      "map": "function (doc) {\n    if(doc.type == \"movie\") {\n        emit([doc.year, doc.genre], 1);\n    }\n}"
+      "map": "function (doc) {\n    if(doc.type == \"movie\"){\n        doc.genres.forEach(function(genre) {\n            if (genre && doc.year) {\n                emit([doc.year, genre], 1);\n            }\n        })\n    }\n}"
     }
   },
   "language": "javascript"
