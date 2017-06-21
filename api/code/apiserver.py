@@ -10,7 +10,7 @@ import couchdb
 from couchdb import Server
 
 database_options = ['postgres', 'redis', 'couchdb']
-selected_database_option = database_options[2]
+selected_database_option = database_options[0]
 
 conn = None
 try:
@@ -24,7 +24,7 @@ except:
     print("I am unable to connect to the database, exiting")
     exit(-1)
 
-redisdb=0
+redisdb = 0
 r = redis.StrictRedis(host='localhost', port=6379, db=redisdb, decode_responses=True)
 print('connected to redis database: {}'.format(redisdb))
 
@@ -32,6 +32,7 @@ couch_server = Server()
 couch_dbname = 'movies2'
 cdb = couch_server['movies2']
 print('connected to couchdb database: {}'.format(couch_dbname))
+
 
 def execute(command):
     cur = conn.cursor()
@@ -46,25 +47,6 @@ def add_api_routes(app):
     app.add_route('/shortActors', SC3ShortActorResource())
     app.add_route('/genres', SC4GenreResource())
     app.add_route('/genreStatistics', SC5GenreStatisticsResource())
-
-def postgres_get_full_movie(id):
-    movies = execute('SELECT m.idmovies, m.title, m.year FROM movies as m WHERE idmovies='+str(id))
-    if not movies[0]:
-        return None
-    movie = {
-        'idmovies': movies[0][0],
-        'title': movies[0][1],
-        'year': movies[0][2],
-    }
-    series = execute('SELECT s.name FROM series as s where s.idmovies = '+str(movie['idmovies']))
-    keywords = execute('SELECT k.keyword FROM movies_keywords as mk JOIN keywords as k ON mk.idkeywords=k.idkeywords where mk.idmovies='+str(movie['idmovies']))
-    genres = execute('SELECT g.genre FROM movies_genres as mg JOIN genres as g ON mg.idgenres=g.idgenres where mg.idmovies='+str(movie['idmovies']))
-    if len(series) == 1:
-        movie['names_of_series'] = series.pop()
-    movie['keywords'] = keywords
-    movie['genres'] = genres
-
-    return movie
 
 
 def redis_get_full_movie(id):
@@ -109,21 +91,46 @@ class SC1MovieResource:
 
         # todo should be full movie not just movie
         if selected_database_option == 'postgres':
-            query = ''
+            query = '''SELECT m.idmovies, m.title, m.year, array_agg(DISTINCT k.keyword), array_agg(DISTINCT g.genre),
+                    array_agg(DISTINCT s.name), array_agg(a.idactors), array_agg(a.fname), array_agg(a.lname), array_agg(ai.character)
+                    FROM movies AS m
+                    LEFT JOIN series AS s ON m.idmovies=s.idmovies
+                    LEFT JOIN movies_keywords AS mk ON m.idmovies=mk.idmovies
+                    LEFT JOIN keywords AS k ON mk.idkeywords=k.idkeywords
+                    LEFT JOIN movies_genres AS mg ON m.idmovies=mg.idmovies
+                    LEFT JOIN genres AS g ON mg.idgenres=g.idgenres
+                    LEFT JOIN acted_in AS ai ON m.idmovies=ai.idmovies
+                    LEFT JOIN actors AS a ON ai.idactors=a.idactors
+                    '''
             if id:
-                query = 'SELECT m.idmovies FROM movies AS m WHERE m.idmovies=' + str(id)
+                query += ' WHERE m.idmovies=' + str(id) + ' GROUP BY m.idmovies'
             elif title:
-                query = 'SELECT m.idmovies FROM movies AS m WHERE m.title LIKE \'%' + title + '%\''
+                query += ' WHERE m.title LIKE \'%' + title + '%\'' + ' GROUP BY m.idmovies'
             rows = execute(query)
 
             result = []
             for row in rows:
-                result.append(postgres_get_full_movie(row[0]))
-                # result.append({
-                #     'idmovies': row[0],
-                #     'title': row[1],
-                #     'year': row[2]
-                # })
+                movie = {
+                    'idmovies': row[0],
+                    'title': row[1],
+                    'year': row[2],
+                    'keywords': row[3],
+                    'genres': row[4],
+                    'series': row[5],
+                    'actors': {}
+                }
+                for i in range(len(row[6])):
+                    idactors = row[6][i]
+                    if idactors not in movie['actors']:
+                        movie['actors'][idactors] = {
+                            'idactors': row[6][i],
+                            'fname': row[7][i],
+                            'lname': row[8][i],
+                            'character': row[9][i]
+                        }
+
+                movie['actors'] = list(movie['actors'].values())
+                result.append(movie)
             resp.body = json.dumps(result)
         elif selected_database_option == 'redis':
             result = []
@@ -140,21 +147,35 @@ class SC1MovieResource:
             resp.body = json.dumps(result)
         elif selected_database_option == 'couchdb':
             if id:
-                viewresult = cdb.view('movieServiceDesign/SC1_by_id', key=id)
-                result = None
-                actors = []
+                movie = self.couchdb_get_movie_by_id(id)
+                resp.body = json.dumps([movie])
+            elif title:
+                # The endkey with \ufff0 appended allows partial matches at the start of the key
+                viewresult = cdb.view('sc1/title_to_id', startkey=title, endkey=title + u'\ufff0')
+                ids = []
                 for row in viewresult:
-                    value = row['value']
-                    if 'idmovies' in value:
-                        if result is None:
-                            result = value
-                        else:
-                            raise ValueError("returned multiple movies for this query by id, should not be possible")
-                    else:
-                        actors.append(value)
-                result['actors'] = actors
+                    ids.append(row['value'][0])
+                movies = []
+                for id in ids:
+                    movies.append(self.couchdb_get_movie_by_id(id))
+                resp.body = json.dumps(movies)
 
-                resp.body = json.dumps([result])
+    @staticmethod
+    def couchdb_get_movie_by_id(id):
+        viewresult = cdb.view('sc1/by_id', key=id)
+        movie = None
+        actors = []
+        for row in viewresult:
+            value = row['value']
+            if 'idmovies' in value:
+                if movie is None:
+                    movie = value
+                else:
+                    raise ValueError("returned multiple movies for this query by id, should not be possible")
+            else:
+                actors.append(value)
+        movie['actors'] = actors
+        return movie
 
 
 class SC2ActorResource:
@@ -227,22 +248,48 @@ class SC2ActorResource:
 
             resp.body = json.dumps(result)
         elif selected_database_option == 'couchdb':
+            viewresult = None
             if id:
-                viewresult = cdb.view('movieServiceDesign/SC2_by_id', key=id)
-                actor = None
+                actor = self.couchdb_get_actor_by_id(id)
+                if actor is None:
+                    resp.body = json.dumps([])
+                else:
+                    resp.body = json.dumps([actor])
+            elif fname and lname:
+                viewresult = cdb.view('sc2/fname_lname_to_id', key=[fname, lname])
+            elif fname:
+                viewresult = cdb.view('sc2/fname_lname_to_id', startkey=[fname], endkey=[fname, {}])
+            elif lname:
+                viewresult = cdb.view('sc2/lname_to_id', key=lname)
+            if viewresult is not None:
+                ids = []
                 for row in viewresult:
-                    if 'idactors' in row['value']:
-                        if actor is None:
-                            actor = row['value']
-                        else:
-                            raise ValueError("returned multiple actors for this query by id, should not be possible")
-                if actor is not None and 'acted_in' in actor:
-                    movieids = [acted_in['movieids'] for acted_in in actor['acted_in']]
-                    movies_viewresult = cdb.view('movieServiceDesign/SC1_by_id', keys=movieids)
-                    actor['acted_in'] = []
-                    for row in movies_viewresult:
-                        actor['acted_in'].append(row['value'])
-                resp.body = json.dumps([actor])
+                    ids.append(row['value'])
+                actors = []
+                for id in ids:
+                    actors.append(self.couchdb_get_actor_by_id(id))
+                resp.body = json.dumps(actors)
+
+    @staticmethod
+    def couchdb_get_actor_by_id(id):
+        """This function gets an actor by id, including all the id's for movies that they acted in. Our couchdb view
+        returns all needed data, however we still need to add the movie id's to the actor dictionary, since they are
+        returned as separate rows by couchdb."""
+        viewresult = cdb.view('sc2/by_id', key=id)
+        actor = None
+        for row in viewresult:
+            if 'idactors' in row['value']:
+                if actor is None:
+                    actor = row['value']
+                else:
+                    raise ValueError("returned multiple actors for this query by id, should not be possible")
+        if actor is not None and 'acted_in' in actor:
+            movieids = [acted_in['movieids'] for acted_in in actor['acted_in']]
+            movies_viewresult = cdb.view('sc1/by_id', keys=movieids)
+            actor['acted_in'] = []
+            for row in movies_viewresult:
+                actor['acted_in'].append(row['value'])
+        return actor
 
 
 class SC3ShortActorResource:
@@ -299,12 +346,38 @@ class SC3ShortActorResource:
 
             resp.body = json.dumps(result)
         elif selected_database_option == 'couchdb':
+            viewresult = None
             if id:
-                viewresult = cdb.view('movieServiceDesign/SC3_by_id', key=id)
-                results = []
-                for result in viewresult:
-                    results.append(result['value'])
-                resp.body = json.dumps(results)
+                actor = self.couchdb_get_short_actor_by_id(id)
+                if actor is not None:
+                    resp.body = json.dumps([actor])
+                else:
+                    resp.body = json.dumps([])
+            elif fname and lname:
+                viewresult = cdb.view('sc2/fname_lname_to_id', key=[fname, lname])
+            elif fname:
+                viewresult = cdb.view('sc2/fname_lname_to_id', startkey=[fname], endkey=[fname, {}])
+            elif lname:
+                viewresult = cdb.view('sc2/lname_to_id', key=lname)
+            if viewresult is not None:
+                ids = []
+                for row in viewresult:
+                    ids.append(row['value'])
+                actors = []
+                for id in ids:
+                    actors.append(self.couchdb_get_short_actor_by_id(id))
+                resp.body = json.dumps(actors)
+
+    @staticmethod
+    def couchdb_get_short_actor_by_id(id):
+        actor = None
+        viewresult = cdb.view('sc3/by_id', key=id)
+        for row in viewresult:
+            if actor is None:
+                actor = row['value']
+            else:
+                raise ValueError("returned multiple actors for this query by id, should not be possible")
+        return actor
 
 
 class SC4GenreResource:
@@ -333,10 +406,10 @@ class SC4GenreResource:
             resp.body = json.dumps(rows)
         if selected_database_option == 'redis':
             result = {}
-            idgenres = r.get('GENRESBYNAME:'+genre)
+            idgenres = r.get('GENRESBYNAME:' + genre)
 
             if not tillYear:
-                tillYear = fromYear+1
+                tillYear = fromYear + 1
 
             keys = []
             for idgenre in idgenres:
@@ -352,9 +425,10 @@ class SC4GenreResource:
             resp.body = json.dumps(result)
         elif selected_database_option == 'couchdb':
             if not tillYear:
-                viewresult = cdb.view('movieServiceDesign/SC4_by_id', key=[genre, fromYear])
+                viewresult = cdb.view('sc4/by_id', key=[genre, fromYear])
             else:
-                viewresult = cdb.view('movieServiceDesign/SC4_by_id', startkey=[genre, fromYear], endkey=[genre,tillYear])
+                viewresult = cdb.view('sc4/by_id', startkey=[genre, fromYear],
+                                      endkey=[genre, tillYear])
             results = []
             for result in viewresult:
                 results.append(result['value'])
@@ -396,7 +470,7 @@ class SC5GenreStatisticsResource:
             result = []
 
             if not tillYear:
-                tillYear = fromYear+1
+                tillYear = fromYear + 1
 
             for idgenre in idgenres:
                 genre_name = r.hget('GENRE:' + idgenre, 'genre')
@@ -413,10 +487,15 @@ class SC5GenreStatisticsResource:
             resp.body = json.dumps(result)
         elif selected_database_option == 'couchdb':
             if not tillYear:
-                viewresult = cdb.view('movieServiceDesign/SC5_by_id', key=[fromYear, {}])
+                viewresult = cdb.view('sc5/by_id', startkey=[fromYear], endkey=[fromYear, {}], group=True)
             else:
-                viewresult = cdb.view('movieServiceDesign/SC5_by_id', startkey=[fromYear, {}], endkey=[tillYear, "{}"])
-            results = []
+                viewresult = cdb.view('sc5/by_id', startkey=[fromYear], endkey=[tillYear - 1, {}], group=True)
+            results = {}
             for result in viewresult:
-                results.append(result['value'])
+                genre = result['key'][1]
+                if genre in results:
+                    results[genre] += result['value']
+                else:
+                    results[genre] = result['value']
+            results = [{'genre': genre, 'movie_count': movie_count} for genre, movie_count in results.items()]
             resp.body = json.dumps(results)
