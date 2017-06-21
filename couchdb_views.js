@@ -70,6 +70,7 @@ function (doc) {
 }
 
 // sc5/by_id:
+// with reducer: _count (_sum works too)
 function (doc) {
     if (doc.type == "movie") {
         doc.genres.forEach(function (genre) {

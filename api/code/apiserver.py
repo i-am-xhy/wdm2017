@@ -488,10 +488,15 @@ class SC5GenreStatisticsResource:
             resp.body = json.dumps(result)
         elif selected_database_option == 'couchdb':
             if not tillYear:
-                viewresult = cdb.view('sc5/by_id', startkey=[fromYear], endkey=[fromYear, {}])
+                viewresult = cdb.view('sc5/by_id', startkey=[fromYear], endkey=[fromYear, {}], group=True)
             else:
-                viewresult = cdb.view('sc5/by_id', startkey=[fromYear], endkey=[tillYear - 1, {}])
-            results = []
+                viewresult = cdb.view('sc5/by_id', startkey=[fromYear], endkey=[tillYear - 1, {}], group=True)
+            results = {}
             for result in viewresult:
-                results.append(result['value'])
+                genre = result['key'][1]
+                if genre in results:
+                    results[genre] += result['value']
+                else:
+                    results[genre] = result['value']
+            results = [{'genre': genre, 'movie_count': movie_count} for genre, movie_count in results.items()]
             resp.body = json.dumps(results)
