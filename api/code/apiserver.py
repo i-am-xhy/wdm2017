@@ -10,7 +10,7 @@ import couchdb
 from couchdb import Server
 
 database_options = ['postgres', 'redis', 'couchdb']
-selected_database_option = database_options[2]
+selected_database_option = database_options[0]
 
 conn = None
 try:
@@ -47,30 +47,6 @@ def add_api_routes(app):
     app.add_route('/shortActors', SC3ShortActorResource())
     app.add_route('/genres', SC4GenreResource())
     app.add_route('/genreStatistics', SC5GenreStatisticsResource())
-
-
-def postgres_get_full_movie(id):
-    movies = execute('SELECT m.idmovies, m.title, m.year FROM movies AS m WHERE idmovies=' + str(id))
-    if not movies[0]:
-        return None
-    movie = {
-        'idmovies': movies[0][0],
-        'title': movies[0][1],
-        'year': movies[0][2],
-    }
-    series = execute('SELECT s.name FROM series AS s WHERE s.idmovies = ' + str(movie['idmovies']))
-    keywords = execute(
-        'SELECT k.keyword FROM movies_keywords AS mk JOIN keywords AS k ON mk.idkeywords=k.idkeywords WHERE mk.idmovies=' + str(
-            movie['idmovies']))
-    genres = execute(
-        'SELECT g.genre FROM movies_genres AS mg JOIN genres AS g ON mg.idgenres=g.idgenres WHERE mg.idmovies=' + str(
-            movie['idmovies']))
-    if len(series) == 1:
-        movie['names_of_series'] = series.pop()
-    movie['keywords'] = keywords
-    movie['genres'] = genres
-
-    return movie
 
 
 def redis_get_full_movie(id):
@@ -115,21 +91,46 @@ class SC1MovieResource:
 
         # todo should be full movie not just movie
         if selected_database_option == 'postgres':
-            query = ''
+            query = '''SELECT m.idmovies, m.title, m.year, array_agg(DISTINCT k.keyword), array_agg(DISTINCT g.genre),
+                    array_agg(DISTINCT s.name), array_agg(a.idactors), array_agg(a.fname), array_agg(a.lname), array_agg(ai.character)
+                    FROM movies AS m
+                    LEFT JOIN series AS s ON m.idmovies=s.idmovies
+                    LEFT JOIN movies_keywords AS mk ON m.idmovies=mk.idmovies
+                    LEFT JOIN keywords AS k ON mk.idkeywords=k.idkeywords
+                    LEFT JOIN movies_genres AS mg ON m.idmovies=mg.idmovies
+                    LEFT JOIN genres AS g ON mg.idgenres=g.idgenres
+                    LEFT JOIN acted_in AS ai ON m.idmovies=ai.idmovies
+                    LEFT JOIN actors AS a ON ai.idactors=a.idactors
+                    '''
             if id:
-                query = 'SELECT m.idmovies FROM movies AS m WHERE m.idmovies=' + str(id)
+                query += ' WHERE m.idmovies=' + str(id) + ' GROUP BY m.idmovies'
             elif title:
-                query = 'SELECT m.idmovies FROM movies AS m WHERE m.title LIKE \'%' + title + '%\''
+                query += ' WHERE m.title LIKE \'%' + title + '%\'' + ' GROUP BY m.idmovies'
             rows = execute(query)
 
             result = []
             for row in rows:
-                result.append(postgres_get_full_movie(row[0]))
-                # result.append({
-                #     'idmovies': row[0],
-                #     'title': row[1],
-                #     'year': row[2]
-                # })
+                movie = {
+                    'idmovies': row[0],
+                    'title': row[1],
+                    'year': row[2],
+                    'keywords': row[3],
+                    'genres': row[4],
+                    'series': row[5],
+                    'actors': {}
+                }
+                for i in range(len(row[6])):
+                    idactors = row[6][i]
+                    if idactors not in movie['actors']:
+                        movie['actors'][idactors] = {
+                            'idactors': row[6][i],
+                            'fname': row[7][i],
+                            'lname': row[8][i],
+                            'character': row[9][i]
+                        }
+
+                movie['actors'] = list(movie['actors'].values())
+                result.append(movie)
             resp.body = json.dumps(result)
         elif selected_database_option == 'redis':
             result = []
@@ -291,7 +292,6 @@ class SC2ActorResource:
         return actor
 
 
-
 class SC3ShortActorResource:
     def on_post(self, req, resp):
         req_as_json = req_to_json(req)
@@ -367,7 +367,6 @@ class SC3ShortActorResource:
                 for id in ids:
                     actors.append(self.couchdb_get_short_actor_by_id(id))
                 resp.body = json.dumps(actors)
-
 
     @staticmethod
     def couchdb_get_short_actor_by_id(id):
