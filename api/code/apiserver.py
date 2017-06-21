@@ -284,7 +284,7 @@ class SC2ActorResource:
                     raise ValueError("returned multiple actors for this query by id, should not be possible")
         if actor is not None and 'acted_in' in actor:
             movieids = [acted_in['movieids'] for acted_in in actor['acted_in']]
-            movies_viewresult = cdb.view('movieServiceDesign/SC1_by_id', keys=movieids)
+            movies_viewresult = cdb.view('sc1/by_id', keys=movieids)
             actor['acted_in'] = []
             for row in movies_viewresult:
                 actor['acted_in'].append(row['value'])
@@ -372,7 +372,7 @@ class SC3ShortActorResource:
     @staticmethod
     def couchdb_get_short_actor_by_id(id):
         actor = None
-        viewresult = cdb.view('movieServiceDesign/SC3_by_id', key=id)
+        viewresult = cdb.view('sc3/by_id', key=id)
         for row in viewresult:
             if actor is None:
                 actor = row['value']
